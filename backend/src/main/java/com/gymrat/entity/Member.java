@@ -38,4 +38,31 @@ public class Member {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "membership_plan_id")
     private MembershipPlan membershipPlan;
+
+    @Column(name = "payment_method")
+    private String paymentMethod;
+
+    @Column(name = "card_number", length = 19)
+    private String cardNumber;
+
+    @Column(name = "card_expiry_date", length = 5)
+    private String cardExpiryDate;
+
+    @Column(name = "card_cvv", length = 4)
+    private String cardCvv;
+
+    @Column(name = "street_address")
+    private String streetAddress;
+
+    @Column(name = "apt_unit")
+    private String aptUnit;
+
+    @Column(name = "city")
+    private String city;
+
+    @Column(name = "state", length = 50)
+    private String state;
+
+    @Column(name = "zip_code", length = 10)
+    private String zipCode;
 }

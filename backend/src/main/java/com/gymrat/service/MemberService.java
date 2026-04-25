@@ -1,13 +1,13 @@
 package com.gymrat.service;
 
-import com.gymrat.dto.MemberDto;
-import com.gymrat.entity.Member;
-import com.gymrat.entity.MemberStatus;
-import com.gymrat.entity.MembershipPlan;
+import com.gymrat.dto.*;
+import com.gymrat.entity.*;
+import com.gymrat.repository.AppUserRepository;
 import com.gymrat.repository.MemberRepository;
 import com.gymrat.repository.MembershipPlanRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
@@ -22,55 +22,63 @@ public class MemberService {
 
     private final MemberRepository memberRepository;
     private final MembershipPlanRepository planRepository;
+    private final AppUserRepository appUserRepository;
+    private final PasswordEncoder passwordEncoder;
 
     public List<MemberDto> getAll(String status) {
         if (status != null && !status.isBlank()) {
-            MemberStatus memberStatus = parseStatus(status);
-            return memberRepository.findByStatus(memberStatus).stream().map(this::toDto).toList();
+            return memberRepository.findByStatus(parseStatus(status)).stream().map(this::toDto).toList();
         }
         return memberRepository.findAll().stream().map(this::toDto).toList();
     }
 
-    public MemberDto getById(Long id) {
-        return toDto(findOrThrow(id));
+    public AdminMemberDto getAdminDetail(Long id) {
+        return toAdminDto(findOrThrow(id));
     }
 
-    public MemberDto create(MemberDto dto) {
+    public MemberProfileDto getMemberProfile(Long id) {
+        return toProfileDto(findOrThrow(id));
+    }
+
+    public AdminMemberDto create(MemberDto dto) {
         memberRepository.findByEmail(dto.email()).ifPresent(existing -> {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Email already in use: " + dto.email());
         });
 
         MembershipPlan plan = resolvePlan(dto.membershipPlanId());
-
-        Member member = Member.builder()
+        Member member = memberRepository.save(Member.builder()
                 .name(dto.name())
                 .email(dto.email())
                 .phone(dto.phone())
                 .joinDate(dto.joinDate() != null ? dto.joinDate() : LocalDate.now())
                 .status(dto.status() != null ? parseStatus(dto.status()) : MemberStatus.ACTIVE)
                 .membershipPlan(plan)
-                .build();
+                .build());
 
-        return toDto(memberRepository.save(member));
+        appUserRepository.save(AppUser.builder()
+                .email(member.getEmail())
+                .password(passwordEncoder.encode("Member123!"))
+                .role(UserRole.MEMBER)
+                .member(member)
+                .build());
+
+        return toAdminDto(member);
     }
 
-    public MemberDto update(Long id, MemberDto dto) {
+    public AdminMemberDto update(Long id, MemberDto dto) {
         Member member = findOrThrow(id);
-
         memberRepository.findByEmail(dto.email()).ifPresent(existing -> {
             if (!existing.getId().equals(id)) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "Email already in use: " + dto.email());
             }
         });
-
         member.setName(dto.name());
         member.setEmail(dto.email());
         member.setPhone(dto.phone());
         member.setJoinDate(dto.joinDate());
         member.setStatus(dto.status() != null ? parseStatus(dto.status()) : member.getStatus());
         member.setMembershipPlan(resolvePlan(dto.membershipPlanId()));
-
-        return toDto(memberRepository.save(member));
+        return toAdminDto(memberRepository.save(member));
     }
 
     public MemberDto updateStatus(Long id, String status) {
@@ -79,8 +87,30 @@ public class MemberService {
         return toDto(memberRepository.save(member));
     }
 
+    public MemberProfileDto updateContact(Long id, ContactUpdateDto dto) {
+        Member member = findOrThrow(id);
+        if (dto.name() != null && !dto.name().isBlank()) member.setName(dto.name());
+        if (dto.phone() != null) member.setPhone(dto.phone());
+        return toProfileDto(memberRepository.save(member));
+    }
+
+    public MemberProfileDto updatePayment(Long id, PaymentUpdateDto dto) {
+        Member member = findOrThrow(id);
+        member.setPaymentMethod(dto.paymentMethod());
+        member.setCardNumber(dto.cardNumber());
+        member.setCardExpiryDate(dto.cardExpiryDate());
+        member.setCardCvv(dto.cardCvv());
+        member.setStreetAddress(dto.streetAddress());
+        member.setAptUnit(dto.aptUnit());
+        member.setCity(dto.city());
+        member.setState(dto.state());
+        member.setZipCode(dto.zipCode());
+        return toProfileDto(memberRepository.save(member));
+    }
+
     public void delete(Long id) {
-        findOrThrow(id);
+        Member member = findOrThrow(id);
+        appUserRepository.findByEmail(member.getEmail()).ifPresent(appUserRepository::delete);
         memberRepository.deleteById(id);
     }
 
@@ -103,16 +133,47 @@ public class MemberService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Plan not found: " + planId));
     }
 
-    public MemberDto toDto(Member member) {
+    private LocalDate computeNextPaymentDate(Member member) {
+        if (member.getMembershipPlan() == null || member.getJoinDate() == null) return null;
+        int months = member.getMembershipPlan().getDurationMonths();
+        LocalDate next = member.getJoinDate();
+        LocalDate today = LocalDate.now();
+        while (!next.isAfter(today)) {
+            next = next.plusMonths(months);
+        }
+        return next;
+    }
+
+    public MemberDto toDto(Member m) {
         return new MemberDto(
-                member.getId(),
-                member.getName(),
-                member.getEmail(),
-                member.getPhone(),
-                member.getJoinDate(),
-                member.getStatus() != null ? member.getStatus().name() : null,
-                member.getMembershipPlan() != null ? member.getMembershipPlan().getId() : null,
-                member.getMembershipPlan() != null ? member.getMembershipPlan().getName() : null
+                m.getId(), m.getName(), m.getEmail(), m.getPhone(), m.getJoinDate(),
+                m.getStatus() != null ? m.getStatus().name() : null,
+                m.getMembershipPlan() != null ? m.getMembershipPlan().getId() : null,
+                m.getMembershipPlan() != null ? m.getMembershipPlan().getName() : null
+        );
+    }
+
+    private AdminMemberDto toAdminDto(Member m) {
+        return new AdminMemberDto(
+                m.getId(), m.getName(), m.getEmail(), m.getPhone(), m.getJoinDate(),
+                m.getStatus() != null ? m.getStatus().name() : null,
+                m.getMembershipPlan() != null ? m.getMembershipPlan().getId() : null,
+                m.getMembershipPlan() != null ? m.getMembershipPlan().getName() : null,
+                m.getPaymentMethod(), m.getCardNumber(), m.getCardExpiryDate(), m.getCardCvv(),
+                m.getStreetAddress(), m.getAptUnit(), m.getCity(), m.getState(), m.getZipCode(),
+                computeNextPaymentDate(m)
+        );
+    }
+
+    private MemberProfileDto toProfileDto(Member m) {
+        return new MemberProfileDto(
+                m.getId(), m.getName(), m.getEmail(), m.getPhone(),
+                m.getStatus() != null ? m.getStatus().name() : null,
+                m.getMembershipPlan() != null ? m.getMembershipPlan().getId() : null,
+                m.getMembershipPlan() != null ? m.getMembershipPlan().getName() : null,
+                computeNextPaymentDate(m),
+                m.getPaymentMethod(), m.getCardNumber(), m.getCardExpiryDate(), m.getCardCvv(),
+                m.getStreetAddress(), m.getAptUnit(), m.getCity(), m.getState(), m.getZipCode()
         );
     }
 }
