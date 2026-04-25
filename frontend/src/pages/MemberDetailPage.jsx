@@ -6,10 +6,13 @@ import { getNotesByMember, addNote, deleteNote } from '../api/notesApi'
 import LoadingSpinner from '../components/common/LoadingSpinner'
 import StatusBadge from '../components/common/StatusBadge'
 import ConfirmDialog from '../components/common/ConfirmDialog'
+import { useAuth } from '../context/AuthContext'
 
 export default function MemberDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'ADMIN'
   const [member, setMember] = useState(null)
   const [attendance, setAttendance] = useState([])
   const [notes, setNotes] = useState([])
@@ -103,15 +106,70 @@ export default function MemberDetailPage() {
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.5rem' }}>
             <StatusBadge status={member.status} />
-            <button className="btn btn-primary" onClick={handleCheckIn}>Check In Now</button>
+            {!isAdmin && (
+              <button className="btn btn-primary" onClick={handleCheckIn}>Check In Now</button>
+            )}
           </div>
         </div>
         <div className="detail-meta">
           <span>Joined: {member.joinDate || '—'}</span>
           <span>Plan: {member.membershipPlanName || '—'}</span>
           <span>Total check-ins: {attendance.length}</span>
+          {member.nextPaymentDate && (
+            <span>Next payment: <strong style={{ color: '#e94560' }}>{member.nextPaymentDate}</strong></span>
+          )}
         </div>
       </div>
+
+      {isAdmin && (
+        <>
+          <div className="card" style={{ marginBottom: '1rem' }}>
+            <h2>Contact Information</h2>
+            <dl className="profile-dl" style={{ display: 'flex', gap: '2rem', flexWrap: 'wrap', margin: 0 }}>
+              <div>
+                <dt>Email</dt>
+                <dd>{member.email || '—'}</dd>
+              </div>
+              <div>
+                <dt>Phone</dt>
+                <dd>{member.phone || '—'}</dd>
+              </div>
+            </dl>
+          </div>
+
+          <div className="card" style={{ marginBottom: '1rem' }}>
+            <h2>Payment Details</h2>
+            <dl className="profile-dl" style={{ display: 'flex', gap: '2rem', flexWrap: 'wrap', margin: 0 }}>
+              <div>
+                <dt>Method</dt>
+                <dd>{member.paymentMethod || '—'}</dd>
+              </div>
+              <div>
+                <dt>Card Number</dt>
+                <dd>{member.cardNumber ? `•••• •••• •••• ${member.cardNumber.slice(-4)}` : '—'}</dd>
+              </div>
+              <div>
+                <dt>Expiry</dt>
+                <dd>{member.cardExpiryDate || '—'}</dd>
+              </div>
+              <div>
+                <dt>Billing Address</dt>
+                <dd>
+                  {member.streetAddress ? (
+                    <>
+                      {member.streetAddress}
+                      {member.aptUnit && `, ${member.aptUnit}`}
+                      {(member.city || member.state || member.zipCode) && (
+                        <><br />{[member.city, member.state, member.zipCode].filter(Boolean).join(', ')}</>
+                      )}
+                    </>
+                  ) : '—'}
+                </dd>
+              </div>
+            </dl>
+          </div>
+        </>
+      )}
 
       <div className="detail-grid">
         <section className="card">

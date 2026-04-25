@@ -44,6 +44,11 @@ export default function DashboardPage() {
   }, [])
 
   if (loading) return <LoadingSpinner />
+  if (!stats) return (
+    <div className="page">
+      <div className="error-banner">Failed to load dashboard data. Please refresh.</div>
+    </div>
+  )
 
   return (
     <div className="page">
