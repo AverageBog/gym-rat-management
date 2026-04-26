@@ -1,7 +1,7 @@
 # Gradle
-build/
-.gradle/
-gradle-app.setting
+**/build/
+**/.gradle/
+**/gradle-app.setting
 !gradle-wrapper.jar
 .gradletasknamecache
 
@@ -39,9 +39,9 @@ out/
 *.sublime-workspace
 
 # Build directories
-target/
-dist/
-build/
+**/target/
+**/dist/
+**/build/
 
 # Node
 node_modules/
@@ -59,12 +59,17 @@ dist/
 
 # Environment variables
 .env
+.env/
 .env.local
 .env.*.local
 
 # Spring Boot local configuration
 **/application-local.yml
 **/application-local.yaml
+**/application-local.properties
+
+# In Progress code reviews
+**/code-review.md
 
 # OS
 .DS_Store
