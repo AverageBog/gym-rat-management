@@ -59,12 +59,16 @@ dist/
 
 # Environment variables
 .env
+.env/
 .env.local
 .env.*.local
 
 # Spring Boot local configuration
 **/application-local.yml
 **/application-local.yaml
+
+# In Progress code reviews
+**/code-review.md
 
 # OS
 .DS_Store
