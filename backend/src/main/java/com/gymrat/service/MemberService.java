@@ -5,6 +5,7 @@ import com.gymrat.entity.*;
 import com.gymrat.repository.AppUserRepository;
 import com.gymrat.repository.MemberRepository;
 import com.gymrat.repository.MembershipPlanRepository;
+import com.gymrat.security.CardEncryptionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -24,6 +25,7 @@ public class MemberService {
     private final MembershipPlanRepository planRepository;
     private final AppUserRepository appUserRepository;
     private final PasswordEncoder passwordEncoder;
+    private final CardEncryptionService cardEncryptionService;
 
     public List<MemberDto> getAll(String status) {
         if (status != null && !status.isBlank()) {
@@ -97,9 +99,10 @@ public class MemberService {
     public MemberProfileDto updatePayment(Long id, PaymentUpdateDto dto) {
         Member member = findOrThrow(id);
         member.setPaymentMethod(dto.paymentMethod());
-        member.setCardNumber(dto.cardNumber());
+        if (dto.cardNumber() != null && !dto.cardNumber().isBlank()) {
+            member.setCardNumber(cardEncryptionService.encrypt(dto.cardNumber()));
+        }
         member.setCardExpiryDate(dto.cardExpiryDate());
-        member.setCardCvv(dto.cardCvv());
         member.setStreetAddress(dto.streetAddress());
         member.setAptUnit(dto.aptUnit());
         member.setCity(dto.city());
@@ -159,7 +162,7 @@ public class MemberService {
                 m.getStatus() != null ? m.getStatus().name() : null,
                 m.getMembershipPlan() != null ? m.getMembershipPlan().getId() : null,
                 m.getMembershipPlan() != null ? m.getMembershipPlan().getName() : null,
-                m.getPaymentMethod(), m.getCardNumber(), m.getCardExpiryDate(), m.getCardCvv(),
+                m.getPaymentMethod(), cardEncryptionService.mask(m.getCardNumber()), m.getCardExpiryDate(),
                 m.getStreetAddress(), m.getAptUnit(), m.getCity(), m.getState(), m.getZipCode(),
                 computeNextPaymentDate(m)
         );
@@ -172,7 +175,7 @@ public class MemberService {
                 m.getMembershipPlan() != null ? m.getMembershipPlan().getId() : null,
                 m.getMembershipPlan() != null ? m.getMembershipPlan().getName() : null,
                 computeNextPaymentDate(m),
-                m.getPaymentMethod(), m.getCardNumber(), m.getCardExpiryDate(), m.getCardCvv(),
+                m.getPaymentMethod(), cardEncryptionService.mask(m.getCardNumber()), m.getCardExpiryDate(),
                 m.getStreetAddress(), m.getAptUnit(), m.getCity(), m.getState(), m.getZipCode()
         );
     }

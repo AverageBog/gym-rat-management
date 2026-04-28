@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState } from 'react'
 import { getMemberById, updateContact, updatePayment } from '../api/membersApi'
 import { useAuth } from '../context/AuthContext'
 import LoadingSpinner from '../components/common/LoadingSpinner'
@@ -14,7 +14,6 @@ export default function MyProfilePage() {
 
   const [contactForm, setContactForm] = useState(null)
   const [paymentForm, setPaymentForm] = useState(null)
-  const [showCvv, setShowCvv] = useState(false)
   const [saving, setSaving] = useState(false)
   const [successMsg, setSuccessMsg] = useState(null)
 
@@ -37,14 +36,10 @@ export default function MyProfilePage() {
   }
 
   function openPaymentEdit() {
-    setShowCvv(false)
     setPaymentForm({
       paymentMethod: profile.paymentMethod || '',
-      cardNumber: profile.cardNumber
-        ? profile.cardNumber.replace(/(.{4})/g, '$1 ').trim()
-        : '',
+      cardNumber: '',
       cardExpiryDate: profile.cardExpiryDate || '',
-      cardCvv: profile.cardCvv || '',
       streetAddress: profile.streetAddress || '',
       aptUnit: profile.aptUnit || '',
       city: profile.city || '',
@@ -85,16 +80,10 @@ export default function MyProfilePage() {
       setSaving(false)
       return
     }
-    if (paymentForm.cardCvv && !/^\d{3,4}$/.test(paymentForm.cardCvv)) {
-      setError('CVV must be 3 or 4 digits.')
-      setSaving(false)
-      return
-    }
     try {
       const res = await updatePayment(memberId, { ...paymentForm, cardNumber: digits })
       setProfile(res.data)
       setPaymentForm(null)
-      setShowCvv(false)
       setSuccessMsg('Payment information updated.')
       setTimeout(() => setSuccessMsg(null), 3000)
     } catch (err) {
@@ -211,45 +200,19 @@ export default function MyProfilePage() {
                   }}
                 />
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                <div className="form-group" style={{ margin: 0 }}>
-                  <label>Expiry Date</label>
-                  <input
-                    type="text"
-                    maxLength={5}
-                    placeholder="MM/YY"
-                    value={paymentForm.cardExpiryDate}
-                    onChange={e => {
-                      let v = e.target.value.replace(/\D/g, '').slice(0, 4)
-                      if (v.length > 2) v = v.slice(0, 2) + '/' + v.slice(2)
-                      setPaymentForm({ ...paymentForm, cardExpiryDate: v })
-                    }}
-                  />
-                </div>
-                <div className="form-group" style={{ margin: 0 }}>
-                  <label>CVV</label>
-                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                    <input
-                      type={showCvv ? 'text' : 'password'}
-                      inputMode="numeric"
-                      maxLength={4}
-                      placeholder="•••"
-                      style={{ flex: 1 }}
-                      value={paymentForm.cardCvv}
-                      onChange={e => setPaymentForm({ ...paymentForm, cardCvv: e.target.value.replace(/\D/g, '').slice(0, 4) })}
-                    />
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-secondary"
-                      style={{ whiteSpace: 'nowrap', padding: '0.35rem 0.6rem' }}
-                      onClick={() => setShowCvv(v => !v)}
-                      title={showCvv ? 'Hide CVV' : 'Show CVV'}
-                    >
-                      {showCvv ? 'Hide' : 'Show'}
-                    </button>
-                  </div>
-                </div>
-              </div>
+              <div className="form-group">
+                <label>Expiry Date</label>
+                <input
+                  type="text"
+                  maxLength={5}
+                  placeholder="MM/YY"
+                  value={paymentForm.cardExpiryDate}
+                  onChange={e => {
+                    let v = e.target.value.replace(/\D/g, '').slice(0, 4)
+                    if (v.length > 2) v = v.slice(0, 2) + '/' + v.slice(2)
+                    setPaymentForm({ ...paymentForm, cardExpiryDate: v })
+                  }}
+                /></div>
               <div className="form-group">
                 <label>Street Address</label>
                 <input
@@ -307,7 +270,6 @@ export default function MyProfilePage() {
                 <dd>{profile.cardNumber ? `•••• •••• •••• ${profile.cardNumber.slice(-4)}` : '—'}</dd>
               </div>
               <div><dt>Expiry</dt><dd>{profile.cardExpiryDate || '—'}</dd></div>
-              <div><dt>CVV</dt><dd>{profile.cardCvv ? '•••' : '—'}</dd></div>
               <div>
                 <dt>Billing Address</dt>
                 <dd>
