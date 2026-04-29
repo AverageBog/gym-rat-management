@@ -63,7 +63,7 @@ class MemberControllerTest {
                 1L, "Jane Doe", "jane@example.com", "555-0100",
                 LocalDate.of(2024, 1, 15), "ACTIVE",
                 2L, "Premium",
-                "CARD", "4111111111111111", "12/27", "321",
+                "CARD", "**** **** **** 1111", "12/27",
                 "123 Main St", "Apt 4", "Springfield", "IL", "62701",
                 LocalDate.of(2026, 4, 15)
         );
@@ -90,7 +90,7 @@ class MemberControllerTest {
         mockMvc.perform(get("/api/members/1").with(authentication(adminAuth())))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.paymentMethod").value("CARD"))
-                .andExpect(jsonPath("$.cardNumber").value("4111111111111111"))
+                .andExpect(jsonPath("$.cardNumber").value("**** **** **** 1111"))
                 .andExpect(jsonPath("$.cardExpiryDate").value("12/27"))
                 .andExpect(jsonPath("$.streetAddress").value("123 Main St"))
                 .andExpect(jsonPath("$.aptUnit").value("Apt 4"))
@@ -100,12 +100,21 @@ class MemberControllerTest {
     }
 
     @Test
+    void adminGetById_noCvvInResponse() throws Exception {
+        when(memberService.getAdminDetail(1L)).thenReturn(sampleAdminDto());
+
+        mockMvc.perform(get("/api/members/1").with(authentication(adminAuth())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.cardCvv").doesNotExist());
+    }
+
+    @Test
     void adminGetById_memberWithNoPaymentData_stillReturnsOk() throws Exception {
         AdminMemberDto noPaymentDto = new AdminMemberDto(
                 2L, "John Smith", "john@example.com", null,
                 LocalDate.of(2025, 6, 1), "ACTIVE",
                 1L, "Basic",
-                null, null, null, null,
+                null, null, null,
                 null, null, null, null, null,
                 null
         );
@@ -127,7 +136,7 @@ class MemberControllerTest {
                 1L, "Jane Doe", "jane@example.com", "555-0100",
                 "ACTIVE", 2L, "Premium",
                 LocalDate.of(2026, 4, 15),
-                "CARD", "4111111111111111", "12/27", "321",
+                "CARD", "**** **** **** 1111", "12/27",
                 "123 Main St", null, "Springfield", "IL", "62701"
         );
         when(memberService.getMemberProfile(1L)).thenReturn(profileDto);

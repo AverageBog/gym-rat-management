@@ -42,14 +42,11 @@ public class Member {
     @Column(name = "payment_method")
     private String paymentMethod;
 
-    @Column(name = "card_number", length = 19)
+    @Column(name = "card_number", length = 255)
     private String cardNumber;
 
     @Column(name = "card_expiry_date", length = 5)
     private String cardExpiryDate;
-
-    @Column(name = "card_cvv", length = 4)
-    private String cardCvv;
 
     @Column(name = "street_address")
     private String streetAddress;

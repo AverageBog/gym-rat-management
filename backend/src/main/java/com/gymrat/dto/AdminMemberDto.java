@@ -14,7 +14,6 @@ public record AdminMemberDto(
         String paymentMethod,
         String cardNumber,
         String cardExpiryDate,
-        String cardCvv,
         String streetAddress,
         String aptUnit,
         String city,
