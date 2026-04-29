@@ -87,5 +87,9 @@ The project ships as a single image, `gym-rat-management:latest`, used for prod 
 - **Verification**: after building, run `docker images gym-rat-management` to confirm the image exists, and `docker history gym-rat-management:latest` to confirm no source / `node_modules` / Gradle caches were carried into the runtime layer.
 
 ## Testing Pattern
-
+- **Always run tests:** Before submitting any PR or completing a task, run relevant test cases
+- **Coverage Goal:** Maintain close to 80% branch coverage only within places that it makes sense. All test cases should be purposeful
+- **Test Structure:** Every new feature requires a dedicated test file with edge-case tests.
+- **Workflow:** Implement -> Run Tests -> Fix -> Confirm.
+- Any specific testing instructions can be found in reference
 @.claude/rules/testing.md
