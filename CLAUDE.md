@@ -20,6 +20,16 @@ npm run build              # production build
 npm run lint               # ESLint
 ```
 
+### Docker (single-image, prod deployment)
+```bash
+docker build -t gym-rat-management:latest .                    # from repo root
+docker run --rm -p 8080:8080 \
+  -e JWT_SECRET=<secret> \
+  -e CARD_ENCRYPTION_KEY=<base64-32-bytes> \
+  gym-rat-management:latest
+```
+The image bundles the Vite-built frontend into the Spring Boot JAR and serves both the SPA (`/`) and the API (`/api/*`) from port 8080. `JWT_SECRET` and `CARD_ENCRYPTION_KEY` are required at runtime; the container fails fast if they are missing.
+
 ## Architecture
 
 This is a gym CRM with a Spring Boot REST API backend and a React SPA frontend.
@@ -59,6 +69,27 @@ This is a gym CRM with a Spring Boot REST API backend and a React SPA frontend.
 | Member | jordan@example.com     | Member123!  |
 | Member | sam@example.com        | Member123!  |
 
-## Testing Pattern
+## Docker Image Creation
+The project ships as a single image, `gym-rat-management:latest`, used for prod deployment. There is intentionally no `docker compose` setup at this stage — H2 stays in-memory and there are no other services.
 
+- **Image name**: always `gym-rat-management` (lowercase). Tag `:latest` for local builds.
+- **Single image**: Spring Boot serves the React SPA from its classpath (`backend/src/main/resources/static/`), so one container exposes one port (`8080`). Do not split into separate frontend/backend containers.
+- **Multi-stage Dockerfile** (at repo root) with three stages:
+  1. `node:20-alpine` — runs `npm ci` and `npm run build` in `frontend/`.
+  2. `eclipse-temurin:17-jdk-jammy` (or `gradle:8.5-jdk17`) — copies the Vite output into `backend/src/main/resources/static/` and runs `./gradlew --no-daemon clean bootJar`.
+  3. `eclipse-temurin:17-jre-jammy` — runtime stage. Only the fat JAR is copied here; no JDK, no Node, no source. The "slim" requirement applies to this stage only; build stages can use full JDK/Node.
+- **Spring profile**: the runtime defaults to `SPRING_PROFILES_ACTIVE=prod`, backed by `backend/src/main/resources/application-prod.properties`. The `prod` profile disables the H2 console and SQL logging. Do not enable `/h2-console` in the image.
+- **Required runtime env vars** (no defaults, must be passed at `docker run`):
+  - `JWT_SECRET` — HMAC signing secret.
+  - `CARD_ENCRYPTION_KEY` — base64-encoded 32 bytes (AES-256).
+- **Non-root**: the runtime stage creates a `spring` user (uid 10001) and the Dockerfile ends with `USER spring` before `ENTRYPOINT`. Never run as root in the runtime stage.
+- **`.dockerignore`**: keep `node_modules/`, `frontend/dist/`, `backend/build/`, `backend/.gradle/`, `.git/`, and IDE files out of the build context.
+- **Verification**: after building, run `docker images gym-rat-management` to confirm the image exists, and `docker history gym-rat-management:latest` to confirm no source / `node_modules` / Gradle caches were carried into the runtime layer.
+
+## Testing Pattern
+- **Always run tests:** Before submitting any PR or completing a task, run relevant test cases
+- **Coverage Goal:** Maintain close to 80% branch coverage only within places that it makes sense. All test cases should be purposeful
+- **Test Structure:** Every new feature requires a dedicated test file with edge-case tests.
+- **Workflow:** Implement -> Run Tests -> Fix -> Confirm.
+- Any specific testing instructions can be found in reference
 @.claude/rules/testing.md
