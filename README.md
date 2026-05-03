@@ -119,3 +119,135 @@ The standard `./gradlew test` suite covers Java unit/integration tests but does 
 **Test script fails at "Container did not become responsive"** — the script dumps the last 50 log lines automatically. Most often this is a Spring startup failure caused by a malformed env var; check the logs for a `Caused by:` line.
 
 **Need to inspect the running container** — `docker exec -it <container_name> sh` (the runtime image is Ubuntu Jammy — `bash` is also available).
+
+---
+
+## Deploy to Google Cloud Run
+
+The same image deploys to Google Cloud Run as a public, scale-to-zero service. The Spring Boot app honors Cloud Run's `$PORT` env var (`server.port=${PORT:8080}` in `application.properties`), so no image changes are needed.
+
+> **MVP caveat (Cloud Run amplifies):** the H2 database is in-memory, and Cloud Run scales to zero by default. Every cold start is a fresh database, and concurrent instances each hold their own copy. Acceptable for a demo; not a real persistence story.
+
+### Prerequisites
+
+- Everything from the Docker section above.
+- `gcloud` CLI installed and authenticated (`gcloud auth login`).
+- A GCP project with billing enabled and the following APIs on: `run.googleapis.com`, `artifactregistry.googleapis.com`, `secretmanager.googleapis.com`.
+- Your project ID (`gcloud config get-value project` or check the GCP console).
+
+### One-time GCP bootstrap
+
+Run these once per GCP project. All commands assume `us-central1`; change the region if you prefer another and pass `GCP_REGION` to the deploy script later.
+
+```bash
+# 1. Point gcloud at the right project, then verify before proceeding.
+#    Every command below acts on whatever project is active — running them
+#    against the wrong project is the #1 source of "service account does
+#    not exist" errors later, because resources land in a project you
+#    aren't deploying to. Confirm the output matches <PROJECT_ID> exactly.
+gcloud config set project <PROJECT_ID>
+gcloud config get-value project   # must print <PROJECT_ID>
+
+# 2. Create the Artifact Registry repo (Docker format).
+gcloud artifacts repositories create gym-rat-management \
+  --repository-format=docker \
+  --location=us-central1 \
+  --description="gym-rat-management container images"
+
+# 3. Create the two runtime secrets in Secret Manager.
+printf '%s' "$(openssl rand -base64 48)" | \
+  gcloud secrets create jwt-secret --data-file=-
+
+printf '%s' "$(openssl rand -base64 32)" | \
+  gcloud secrets create card-encryption-key --data-file=-
+
+# 4. Create a dedicated runtime service account for the Cloud Run service.
+#    (Google has deprecated auto-creation of the default Compute Engine SA;
+#     using a dedicated SA is least-privilege and the now-recommended pattern.)
+gcloud iam service-accounts create gym-rat-runtime \
+  --display-name="gym-rat-management Cloud Run runtime"
+
+# 5. Grant that SA access to both secrets.
+SA="gym-rat-runtime@<PROJECT_ID>.iam.gserviceaccount.com"
+
+for SECRET in jwt-secret card-encryption-key; do
+  gcloud secrets add-iam-policy-binding "$SECRET" \
+    --member="serviceAccount:${SA}" \
+    --role=roles/secretmanager.secretAccessor
+done
+```
+
+If step 5 is skipped, the deploy will succeed but the Cloud Run container will fail to start with a `permission denied to access secret` error in the logs. This is the most common bootstrap mistake.
+
+The deploy script wires this SA into the Cloud Run service via `--service-account`. Override the SA email via the `RUNTIME_SA` env var if you need a different one.
+
+### Configure the deploy script
+
+The deploy script reads its config from env vars:
+
+| Env var        | Required | Default              | Purpose                                |
+|----------------|----------|----------------------|----------------------------------------|
+| `GCP_PROJECT`  | yes      | —                    | GCP project ID                         |
+| `GCP_REGION`   | no       | `us-central1`        | Cloud Run + Artifact Registry region   |
+| `AR_REPO`      | no       | `gym-rat-management` | Artifact Registry repository name      |
+| `SERVICE_NAME` | no       | `gym-rat-management` | Cloud Run service name                 |
+| `RUNTIME_SA`   | no       | `gym-rat-runtime@${GCP_PROJECT}.iam.gserviceaccount.com` | Service account the Cloud Run service runs as (must have `secretAccessor` on both secrets) |
+| `DEPLOY_SKIP_LOCAL_TESTS` | no | unset           | Set to `1` to skip the local pre-flight (emergency redeploys only) |
+
+```bash
+export GCP_PROJECT=<your-project-id>
+```
+
+### Deploy
+
+```bash
+./scripts/deploy-cloud-run.sh
+```
+
+What it does, in order:
+
+1. Verifies prerequisites (`gcloud` auth, `docker` daemon).
+2. Runs `scripts/test-docker-image.sh` as the local pre-flight gate.
+3. Builds the image and tags it twice for Artifact Registry: `:<git-short-sha>` and `:latest`.
+4. Pushes both tags.
+5. Deploys to Cloud Run with `--allow-unauthenticated`, `min-instances=0`, `--cpu-boost`, the `prod` Spring profile, and the two secrets mounted via `--set-secrets`.
+6. Resolves the live service URL.
+7. Runs `scripts/test-cloud-run-deployment.sh` against that URL for the live smoke.
+8. Prints the URL on success.
+
+The whole thing exits non-zero on the first failure, so you can chain it into a deployment pipeline.
+
+### Verify an existing deployment
+
+To re-smoke a deployment without redeploying (e.g., after rotating a secret or restarting a revision):
+
+```bash
+./scripts/test-cloud-run-deployment.sh https://your-service-xyz-uc.a.run.app
+```
+
+This runs the same endpoint-contract checks the deploy script runs at the end. Useful for verifying that an out-of-band change didn't break the live URL.
+
+### Rotating secrets
+
+Cloud Run resolves the `:latest` alias on each revision start, so rotating a secret is a two-step:
+
+```bash
+# 1. Publish a new version of the secret.
+printf '%s' "$(openssl rand -base64 48)" | \
+  gcloud secrets versions add jwt-secret --data-file=-
+
+# 2. Trigger a new revision so Cloud Run re-reads the secret.
+./scripts/deploy-cloud-run.sh
+```
+
+Existing instances keep using the old value until they recycle.
+
+### Cloud Run troubleshooting
+
+**Deploy succeeds but the service is unhealthy / 503s** — the most common cause is the missing IAM binding from bootstrap step 4. Check the Cloud Run logs (`gcloud run services logs read gym-rat-management --region=us-central1 --limit=50`) for `permission denied to access secret`.
+
+**`docker push` fails with `denied: Permission`** — `gcloud auth configure-docker us-central1-docker.pkg.dev` wasn't run, or your account doesn't have `roles/artifactregistry.writer` on the project. The deploy script runs `configure-docker` for you; the role grant is a one-time IAM step.
+
+**Cold-start request times out** — Spring Boot needs ~5–10s with `--cpu-boost`. The smoke script tolerates up to 60s on the first hit. If a real request times out, raise `--timeout` in `deploy-cloud-run.sh` (default Cloud Run timeout is 300s).
+
+**Stale image deployed** — the script tags every push with the git short SHA and deploys that specific tag, so this shouldn't happen. If you see it, check `gcloud run revisions list --service=gym-rat-management --region=us-central1` and confirm the active revision is using the SHA tag, not `:latest`.

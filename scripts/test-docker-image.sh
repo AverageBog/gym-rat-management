@@ -86,10 +86,17 @@ pass "App responsive (took ${elapsed}s)"
 # ----------------------------------------------------------------------------
 # 4. Prod profile active in logs
 # ----------------------------------------------------------------------------
-if docker logs "$CONTAINER_NAME" 2>&1 | grep -q '"prod"'; then
+# Match any "profile ... active" or "active ... profile" line that mentions prod.
+# Tolerant of Spring Boot version-to-version log format changes (some versions
+# quote the profile name, some don't; some say "1 profile is active", others
+# "The following profiles are active").
+if docker logs "$CONTAINER_NAME" 2>&1 | grep -iE '(profile.*active.*prod|active.*profile.*prod)' >/dev/null; then
     pass "Spring 'prod' profile active"
 else
-    fail "Expected 'prod' profile in startup logs"
+    echo "--- profile-related log lines (for diagnosis) ---"
+    docker logs "$CONTAINER_NAME" 2>&1 | grep -iE 'profile|GymRatApplication' | head -10
+    echo "---"
+    fail "Expected 'prod' profile in startup logs (see lines above)"
 fi
 
 # ----------------------------------------------------------------------------

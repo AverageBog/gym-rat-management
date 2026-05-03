@@ -86,6 +86,23 @@ The project ships as a single image, `gym-rat-management:latest`, used for prod 
 - **`.dockerignore`**: keep `node_modules/`, `frontend/dist/`, `backend/build/`, `backend/.gradle/`, `.git/`, and IDE files out of the build context.
 - **Verification**: after building, run `docker images gym-rat-management` to confirm the image exists, and `docker history gym-rat-management:latest` to confirm no source / `node_modules` / Gradle caches were carried into the runtime layer.
 
+## Cloud Run Deployment
+The same image deploys to Google Cloud Run as a public, scale-to-zero service. Bootstrap walk-through and full troubleshooting live in `README.md` ("Deploy to Google Cloud Run"); this section pins the contract.
+
+- **Service name**: `gym-rat-management` (Cloud Run service); also the image name within Artifact Registry.
+- **Region**: `us-central1` by default; overridable via `GCP_REGION` env var on the deploy script.
+- **Artifact Registry repo**: `gym-rat-management` (Docker format) at `${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT}/gym-rat-management`.
+- **Image tagging**: every push gets two tags — `:<git-short-sha>` (deployed) and `:latest` (for human inspection). Cloud Run is always told to deploy the SHA tag, never `:latest`, to avoid stale-cache surprises.
+- **Spring profile**: `SPRING_PROFILES_ACTIVE=prod` is set via `--set-env-vars` on the deploy command (same profile used locally in the image).
+- **Secrets**: `JWT_SECRET` and `CARD_ENCRYPTION_KEY` are stored in Google Secret Manager as `jwt-secret` and `card-encryption-key`. The Cloud Run service mounts them via `--set-secrets ...:latest`. Never pass these as `--set-env-vars`.
+- **Runtime service account**: a dedicated SA `gym-rat-runtime@${GCP_PROJECT}.iam.gserviceaccount.com` runs the Cloud Run service. The deploy script passes it via `--service-account` (overridable with `RUNTIME_SA`). Do not fall back to the default compute SA — Google has deprecated its auto-creation, and least-privilege is the established pattern here.
+- **Required IAM**: `gym-rat-runtime@${GCP_PROJECT}.iam.gserviceaccount.com` must have `roles/secretmanager.secretAccessor` on both `jwt-secret` and `card-encryption-key`. Missing this binding is the most common deploy-time failure (deploy succeeds, container fails to start with "permission denied to access secret").
+- **Auth model**: deployed with `--allow-unauthenticated`. The application enforces auth via JWT — Cloud Run is not the auth boundary. Do not toggle this unless wrapping the service behind something else.
+- **Scaling**: `--min-instances=0`, `--max-instances=3`, `--cpu-boost` for faster cold starts. Cold starts are ~5–10s; the in-memory H2 database resets on every cold start (known MVP limitation, amplified by Cloud Run).
+- **Port contract**: the application reads `server.port=${PORT:8080}` so it honors Cloud Run's `$PORT` env var. Do not hardcode `8080` in future config — it would break Cloud Run if Google ever changes the default.
+- **Deploy command**: `GCP_PROJECT=<id> ./scripts/deploy-cloud-run.sh`. Does build → push → deploy → live smoke. Exits non-zero on first failure.
+- **Smoke an existing deployment**: `./scripts/test-cloud-run-deployment.sh <URL>` — works against any live URL, no Docker daemon needed.
+
 ## Testing Pattern
 - **Always run tests:** Before submitting any PR or completing a task, run relevant test cases
 - **Coverage Goal:** Maintain close to 80% branch coverage only within places that it makes sense. All test cases should be purposeful
