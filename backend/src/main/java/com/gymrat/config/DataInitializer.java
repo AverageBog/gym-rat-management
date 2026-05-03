@@ -5,6 +5,7 @@ import com.gymrat.entity.UserRole;
 import com.gymrat.repository.AppUserRepository;
 import com.gymrat.repository.MemberRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -19,10 +20,15 @@ public class DataInitializer implements ApplicationRunner {
     private final MemberRepository memberRepository;
     private final PasswordEncoder passwordEncoder;
 
+    // Seeded admin credential is env-driven so the prod password isn't in git.
+    // Dev/local has a non-secret default; prod requires ADMIN_SEED_PASSWORD via Secret Manager.
+    @Value("${app.seed.admin-password}")
+    private String adminSeedPassword;
+
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
-        createAdminUser("admin@gym.com", "Admin123!");
+        createAdminUser("admin@gym.com", adminSeedPassword);
         linkMemberUser("alex@example.com", "Member123!");
         linkMemberUser("jordan@example.com", "Member123!");
         linkMemberUser("sam@example.com", "Member123!");

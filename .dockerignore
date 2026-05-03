@@ -21,7 +21,7 @@ backend/out/
 backend/src/main/resources/application-local.properties
 
 docs/
-implementation-plan.md
+future-docker-enhancements.md
 CLAUDE.md
 README.md
 .claude/

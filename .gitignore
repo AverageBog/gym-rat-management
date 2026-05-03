@@ -71,6 +71,9 @@ dist/
 # In Progress code reviews
 **/code-review.md
 
+# Archived planning docs — kept locally for reference, not checked in
+docs/past-plans/
+
 # OS
 .DS_Store
 .DS_Store?
