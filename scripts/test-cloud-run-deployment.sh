@@ -83,21 +83,30 @@ check_status "$URL/assets/definitely-missing.js" "404" "Missing asset 404s (no S
 # ----------------------------------------------------------------------------
 # Login + authenticated request
 # ----------------------------------------------------------------------------
-LOGIN_RESPONSE=$(curl -sS --max-time 30 -X POST "$URL/api/auth/login" \
-    -H 'Content-Type: application/json' \
-    -d '{"email":"admin@gym.com","password":"Admin123!"}')
-TOKEN=$(echo "$LOGIN_RESPONSE" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
-if [ -z "$TOKEN" ]; then
-    fail "Login did not return a token. Response: $LOGIN_RESPONSE"
-fi
-pass "Login returns a JWT (length ${#TOKEN})"
-
-MEMBER_RESPONSE=$(curl -sS --max-time 30 -H "Authorization: Bearer $TOKEN" "$URL/api/members")
-MEMBER_COUNT=$(echo "$MEMBER_RESPONSE" | grep -oE '"id":[0-9]+' | wc -l)
-if [ "$MEMBER_COUNT" -gt 0 ]; then
-    pass "Authenticated GET /api/members returned $MEMBER_COUNT members"
+# The seeded admin password lives in Secret Manager — `deploy-cloud-run.sh` exports
+# it before invoking this script. When run standalone without it set, skip the
+# authed checks rather than fail (still useful for quick contract checks).
+if [ -z "${ADMIN_SEED_PASSWORD:-}" ]; then
+    info "ADMIN_SEED_PASSWORD not set — skipping authenticated checks. To enable:"
+    info "  ADMIN_SEED_PASSWORD=\$(gcloud secrets versions access latest --secret=admin-seed-password) $0 $URL"
 else
-    fail "GET /api/members returned no members. Response: $MEMBER_RESPONSE"
+    LOGIN_BODY=$(printf '{"email":"admin@gym.com","password":"%s"}' "$ADMIN_SEED_PASSWORD")
+    LOGIN_RESPONSE=$(curl -sS --max-time 30 -X POST "$URL/api/auth/login" \
+        -H 'Content-Type: application/json' \
+        -d "$LOGIN_BODY")
+    TOKEN=$(echo "$LOGIN_RESPONSE" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+    if [ -z "$TOKEN" ]; then
+        fail "Login did not return a token. Response: $LOGIN_RESPONSE"
+    fi
+    pass "Login returns a JWT (length ${#TOKEN})"
+
+    MEMBER_RESPONSE=$(curl -sS --max-time 30 -H "Authorization: Bearer $TOKEN" "$URL/api/members")
+    MEMBER_COUNT=$(echo "$MEMBER_RESPONSE" | grep -oE '"id":[0-9]+' | wc -l)
+    if [ "$MEMBER_COUNT" -gt 0 ]; then
+        pass "Authenticated GET /api/members returned $MEMBER_COUNT members"
+    else
+        fail "GET /api/members returned no members. Response: $MEMBER_RESPONSE"
+    fi
 fi
 
 echo

@@ -142,7 +142,7 @@ gcloud run deploy "$SERVICE_NAME" \
     --min-instances 0 \
     --max-instances 3 \
     --set-env-vars "$ENV_VARS" \
-    --set-secrets "JWT_SECRET=jwt-secret:latest,CARD_ENCRYPTION_KEY=card-encryption-key:latest" \
+    --set-secrets "JWT_SECRET=jwt-secret:latest,CARD_ENCRYPTION_KEY=card-encryption-key:latest,ADMIN_SEED_PASSWORD=admin-seed-password:latest" \
     --quiet \
     || fail "gcloud run deploy failed"
 pass "Deploy command completed"
@@ -157,6 +157,14 @@ pass "Service URL: $SERVICE_URL"
 # ----------------------------------------------------------------------------
 # 6. Live smoke test
 # ----------------------------------------------------------------------------
+# Pull the seeded admin password from Secret Manager so the smoke can do the
+# authed checks. Best-effort: if the SA running this script can't read it, we
+# still run the unauthed contract checks.
+ADMIN_SEED_PASSWORD=$(gcloud secrets versions access latest \
+    --secret=admin-seed-password \
+    --project="$GCP_PROJECT" 2>/dev/null || true)
+export ADMIN_SEED_PASSWORD
+
 info "Running live smoke test against $SERVICE_URL"
 if ! "$PROJECT_ROOT/scripts/test-cloud-run-deployment.sh" "$SERVICE_URL"; then
     fail "Live smoke test failed against $SERVICE_URL"

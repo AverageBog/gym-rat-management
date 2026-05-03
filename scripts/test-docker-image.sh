@@ -52,7 +52,7 @@ pass "Image present (size: $IMAGE_SIZE)"
 # ----------------------------------------------------------------------------
 info "Verifying container fails fast without required env vars"
 if docker run --rm --name "${CONTAINER_NAME}-noenv" "$IMAGE_NAME" >/dev/null 2>&1; then
-    fail "Container started without JWT_SECRET / CARD_ENCRYPTION_KEY (it must not)"
+    fail "Container started without JWT_SECRET / CARD_ENCRYPTION_KEY / ADMIN_SEED_PASSWORD (it must not)"
 fi
 pass "Container fails fast without required env"
 
@@ -61,6 +61,7 @@ pass "Container fails fast without required env"
 # ----------------------------------------------------------------------------
 JWT_SECRET=$(openssl rand -base64 48 | tr -d '\n')
 CARD_ENCRYPTION_KEY=$(openssl rand -base64 32 | tr -d '\n')
+ADMIN_SEED_PASSWORD="DockerSmokeAdmin#$(openssl rand -hex 4)"
 
 info "Starting container on host port $HOST_PORT"
 docker run -d \
@@ -68,6 +69,7 @@ docker run -d \
     -p "${HOST_PORT}:8080" \
     -e JWT_SECRET="$JWT_SECRET" \
     -e CARD_ENCRYPTION_KEY="$CARD_ENCRYPTION_KEY" \
+    -e ADMIN_SEED_PASSWORD="$ADMIN_SEED_PASSWORD" \
     "$IMAGE_NAME" >/dev/null
 
 info "Waiting for app readiness (timeout ${READY_TIMEOUT_SECONDS}s)"
@@ -157,7 +159,7 @@ check_status "$BASE/assets/definitely-missing.js" "404" "Missing asset 404s (no 
 # ----------------------------------------------------------------------------
 # 7. Login + authenticated request
 # ----------------------------------------------------------------------------
-LOGIN_BODY='{"email":"admin@gym.com","password":"Admin123!"}'
+LOGIN_BODY=$(printf '{"email":"admin@gym.com","password":"%s"}' "$ADMIN_SEED_PASSWORD")
 LOGIN_RESPONSE=$(curl -sS -X POST "$BASE/api/auth/login" \
     -H 'Content-Type: application/json' \
     -d "$LOGIN_BODY")

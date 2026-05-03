@@ -39,17 +39,19 @@ The runtime layer should not contain source files, `node_modules/`, or Gradle ca
 
 ## Run the container
 
-The container requires two secrets at runtime. It will fail fast on startup if either is missing.
+The container requires three runtime values when run under the `prod` profile (the default for the image). It will fail fast on startup if any are missing.
 
 | Env var               | Purpose                              | How to generate                  |
 |-----------------------|--------------------------------------|----------------------------------|
 | `JWT_SECRET`          | HMAC signing key for JWTs            | `openssl rand -base64 48`        |
 | `CARD_ENCRYPTION_KEY` | AES-256 key (base64-encoded 32 bytes) for stored card numbers | `openssl rand -base64 32` |
+| `ADMIN_SEED_PASSWORD` | Password for the seeded `admin@gym.com` account (re-seeded on every cold start since H2 is in-memory) | pick a strong password you'll remember |
 
 ```bash
 docker run --rm -p 8080:8080 \
   -e JWT_SECRET="$(openssl rand -base64 48)" \
   -e CARD_ENCRYPTION_KEY="$(openssl rand -base64 32)" \
+  -e ADMIN_SEED_PASSWORD='your-strong-admin-password' \
   gym-rat-management:latest
 ```
 
@@ -154,12 +156,18 @@ gcloud artifacts repositories create gym-rat-management \
   --location=us-central1 \
   --description="gym-rat-management container images"
 
-# 3. Create the two runtime secrets in Secret Manager.
+# 3. Create the three runtime secrets in Secret Manager.
 printf '%s' "$(openssl rand -base64 48)" | \
   gcloud secrets create jwt-secret --data-file=-
 
 printf '%s' "$(openssl rand -base64 32)" | \
   gcloud secrets create card-encryption-key --data-file=-
+
+# Pick a strong admin password — this is what you'll log in as admin@gym.com with.
+# It is re-seeded on every cold start, so changing it requires a `gcloud secrets versions add`
+# (see "Rotating secrets" below) plus a redeploy or revision restart.
+printf '%s' '<your-strong-admin-password>' | \
+  gcloud secrets create admin-seed-password --data-file=-
 
 # 4. Create a dedicated runtime service account for the Cloud Run service.
 #    (Google has deprecated auto-creation of the default Compute Engine SA;
@@ -167,10 +175,10 @@ printf '%s' "$(openssl rand -base64 32)" | \
 gcloud iam service-accounts create gym-rat-runtime \
   --display-name="gym-rat-management Cloud Run runtime"
 
-# 5. Grant that SA access to both secrets.
+# 5. Grant that SA access to all three secrets.
 SA="gym-rat-runtime@<PROJECT_ID>.iam.gserviceaccount.com"
 
-for SECRET in jwt-secret card-encryption-key; do
+for SECRET in jwt-secret card-encryption-key admin-seed-password; do
   gcloud secrets add-iam-policy-binding "$SECRET" \
     --member="serviceAccount:${SA}" \
     --role=roles/secretmanager.secretAccessor

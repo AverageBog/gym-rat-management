@@ -62,12 +62,16 @@ This is a gym CRM with a Spring Boot REST API backend and a React SPA frontend.
 **API proxy**: Vite proxies `/api` → `http://localhost:8080`, so the frontend always calls `/api/...` regardless of environment.
 
 ## Seed Credentials
-| Role   | Email                  | Password    |
-|--------|------------------------|-------------|
-| Admin  | admin@gym.com          | Admin123!   |
-| Member | alex@example.com       | Member123!  |
-| Member | jordan@example.com     | Member123!  |
-| Member | sam@example.com        | Member123!  |
+The admin password is env-driven so the prod password isn't in git. The dev/local default below is checked in; prod requires `ADMIN_SEED_PASSWORD` (mounted from Secret Manager).
+
+| Role   | Email                  | Password (dev/local)   |
+|--------|------------------------|------------------------|
+| Admin  | admin@gym.com          | `LocalDevAdmin#2026!` (overridable via `ADMIN_SEED_PASSWORD`) |
+| Member | alex@example.com       | `Member123!`           |
+| Member | jordan@example.com     | `Member123!`           |
+| Member | sam@example.com        | `Member123!`           |
+
+Member passwords are demo accounts with limited (own-profile) access and remain hardcoded.
 
 ## Docker Image Creation
 The project ships as a single image, `gym-rat-management:latest`, used for prod deployment. There is intentionally no `docker compose` setup at this stage — H2 stays in-memory and there are no other services.
@@ -82,6 +86,7 @@ The project ships as a single image, `gym-rat-management:latest`, used for prod 
 - **Required runtime env vars** (no defaults, must be passed at `docker run`):
   - `JWT_SECRET` — HMAC signing secret.
   - `CARD_ENCRYPTION_KEY` — base64-encoded 32 bytes (AES-256).
+  - `ADMIN_SEED_PASSWORD` — password used to seed the `admin@gym.com` AppUser on cold start. Required only when running with `SPRING_PROFILES_ACTIVE=prod`; the default profile has a checked-in dev value.
 - **Non-root**: the runtime stage creates a `spring` user (uid 10001) and the Dockerfile ends with `USER spring` before `ENTRYPOINT`. Never run as root in the runtime stage.
 - **`.dockerignore`**: keep `node_modules/`, `frontend/dist/`, `backend/build/`, `backend/.gradle/`, `.git/`, and IDE files out of the build context.
 - **Verification**: after building, run `docker images gym-rat-management` to confirm the image exists, and `docker history gym-rat-management:latest` to confirm no source / `node_modules` / Gradle caches were carried into the runtime layer.
@@ -94,9 +99,9 @@ The same image deploys to Google Cloud Run as a public, scale-to-zero service. B
 - **Artifact Registry repo**: `gym-rat-management` (Docker format) at `${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT}/gym-rat-management`.
 - **Image tagging**: every push gets two tags — `:<git-short-sha>` (deployed) and `:latest` (for human inspection). Cloud Run is always told to deploy the SHA tag, never `:latest`, to avoid stale-cache surprises.
 - **Spring profile**: `SPRING_PROFILES_ACTIVE=prod` is set via `--set-env-vars` on the deploy command (same profile used locally in the image).
-- **Secrets**: `JWT_SECRET` and `CARD_ENCRYPTION_KEY` are stored in Google Secret Manager as `jwt-secret` and `card-encryption-key`. The Cloud Run service mounts them via `--set-secrets ...:latest`. Never pass these as `--set-env-vars`.
+- **Secrets**: `JWT_SECRET`, `CARD_ENCRYPTION_KEY`, and `ADMIN_SEED_PASSWORD` are stored in Google Secret Manager as `jwt-secret`, `card-encryption-key`, and `admin-seed-password`. The Cloud Run service mounts them via `--set-secrets ...:latest`. Never pass these as `--set-env-vars`.
 - **Runtime service account**: a dedicated SA `gym-rat-runtime@${GCP_PROJECT}.iam.gserviceaccount.com` runs the Cloud Run service. The deploy script passes it via `--service-account` (overridable with `RUNTIME_SA`). Do not fall back to the default compute SA — Google has deprecated its auto-creation, and least-privilege is the established pattern here.
-- **Required IAM**: `gym-rat-runtime@${GCP_PROJECT}.iam.gserviceaccount.com` must have `roles/secretmanager.secretAccessor` on both `jwt-secret` and `card-encryption-key`. Missing this binding is the most common deploy-time failure (deploy succeeds, container fails to start with "permission denied to access secret").
+- **Required IAM**: `gym-rat-runtime@${GCP_PROJECT}.iam.gserviceaccount.com` must have `roles/secretmanager.secretAccessor` on `jwt-secret`, `card-encryption-key`, and `admin-seed-password`. Missing this binding is the most common deploy-time failure (deploy succeeds, container fails to start with "permission denied to access secret").
 - **Auth model**: deployed with `--allow-unauthenticated`. The application enforces auth via JWT — Cloud Run is not the auth boundary. Do not toggle this unless wrapping the service behind something else.
 - **Scaling**: `--min-instances=0`, `--max-instances=3`, `--cpu-boost` for faster cold starts. Cold starts are ~5–10s; the in-memory H2 database resets on every cold start (known MVP limitation, amplified by Cloud Run).
 - **Port contract**: the application reads `server.port=${PORT:8080}` so it honors Cloud Run's `$PORT` env var. Do not hardcode `8080` in future config — it would break Cloud Run if Google ever changes the default.
